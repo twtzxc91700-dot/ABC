@@ -1,0 +1,1037 @@
+==================================================
+-- SERVICES
+--==================================================
+
+local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local LocalPlayer = Players.LocalPlayer
+
+--==================================================
+-- FLUENT
+--==================================================
+
+local Fluent = loadstring(game:HttpGet(
+    "https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"
+))()
+
+local SaveManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"
+))()
+
+local InterfaceManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"
+))()
+
+--==================================================
+-- WINDOW
+--==================================================
+
+local Window = Fluent:CreateWindow({
+    Title = "Target Circle",
+    SubTitle = "Teleport 0.1s + Skill 0.25s",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+--==================================================
+-- TABS
+--==================================================
+
+local Tabs = {
+    Main = Window:AddTab({
+        Title = "Main",
+        Icon = "target"
+    }),
+
+    Settings = Window:AddTab({
+        Title = "Settings",
+        Icon = "settings"
+    })
+}
+
+--==================================================
+-- VARIABLES
+--==================================================
+
+local SelectedPlayerName = nil
+local Running = false
+
+-- วงกลม
+local CircleAngle = 0
+
+-- ระยะจาก Target
+local CircleRadius = 5
+
+-- ความสูง
+local CircleHeight = 2
+
+-- องศาที่หมุนต่อการวาร์ป 1 ครั้ง
+local CircleSpeed = 15
+
+--==================================================
+-- PLAYER LIST
+--==================================================
+
+local function GetPlayerNames()
+
+    local Names = {}
+
+    for _, Player in ipairs(Players:GetPlayers()) do
+
+        if Player ~= LocalPlayer then
+            table.insert(Names, Player.Name)
+        end
+
+    end
+
+    table.sort(Names)
+
+    return Names
+end
+
+--==================================================
+-- GET TARGET
+--==================================================
+
+local function GetTarget()
+
+    if not SelectedPlayerName then
+        return nil
+    end
+
+    return Players:FindFirstChild(SelectedPlayerName)
+end
+
+--==================================================
+-- CIRCLE TELEPORT
+--==================================================
+
+local function TeleportAroundTarget()
+
+    local Target = GetTarget()
+
+    if not Target then
+        return false
+    end
+
+    local Character = LocalPlayer.Character
+    local TargetCharacter = Target.Character
+
+    if not Character or not TargetCharacter then
+        return false
+    end
+
+    local MyRoot = Character:FindFirstChild("HumanoidRootPart")
+    local TargetRoot = TargetCharacter:FindFirstChild("HumanoidRootPart")
+
+    if not MyRoot or not TargetRoot then
+        return false
+    end
+
+    -- เพิ่มมุม
+    CircleAngle = CircleAngle + math.rad(CircleSpeed)
+
+    -- ครบรอบ
+    if CircleAngle >= math.rad(360) then
+        CircleAngle = CircleAngle - math.rad(360)
+    end
+
+    -- คำนวณจุดรอบ Target
+    local OffsetX = math.cos(CircleAngle) * CircleRadius
+    local OffsetZ = math.sin(CircleAngle) * CircleRadius
+
+    local Position =
+        TargetRoot.Position
+        + Vector3.new(
+            OffsetX,
+            CircleHeight,
+            OffsetZ
+        )
+
+    -- วาร์ป + หันหน้าเข้า Target
+    MyRoot.CFrame = CFrame.lookAt(
+        Position,
+        TargetRoot.Position
+    )
+
+    return true
+end
+
+--==================================================
+-- PRESS KEY
+--==================================================
+
+local function PressKey(KeyCode)
+
+    pcall(function()
+
+        VirtualInputManager:SendKeyEvent(
+            true,
+            KeyCode,
+            false,
+            game
+        )
+
+        VirtualInputManager:SendKeyEvent(
+            false,
+            KeyCode,
+            false,
+            game
+        )
+
+    end)
+
+end
+
+--==================================================
+-- PLAYER DROPDOWN
+--==================================================
+
+local PlayerDropdown = Tabs.Main:AddDropdown("TargetPlayer", {
+
+    Title = "เลือกผู้เล่น",
+
+    Description = "เลือกผู้เล่นที่ต้องการหมุนรอบ",
+
+    Values = GetPlayerNames(),
+
+    Multi = false,
+
+    Default = nil
+
+})
+
+PlayerDropdown:OnChanged(function(Value)
+
+    if not Value then
+
+        SelectedPlayerName = nil
+
+        return
+    end
+
+    local Player = Players:FindFirstChild(Value)
+
+    if Player then
+
+        SelectedPlayerName = Player.Name
+        CircleAngle = 0
+
+        print("[TARGET]", SelectedPlayerName)
+
+        Fluent:Notify({
+            Title = "เลือก Target",
+            Content = SelectedPlayerName,
+            Duration = 2
+        })
+
+    end
+
+end)
+
+--==================================================
+-- REFRESH
+--==================================================
+
+Tabs.Main:AddButton({
+
+    Title = "รีเฟรชรายชื่อผู้เล่น",
+
+    Description = "โหลดรายชื่อผู้เล่นใหม่",
+
+    Callback = function()
+
+        pcall(function()
+            PlayerDropdown:SetValues(GetPlayerNames())
+        end)
+
+        Fluent:Notify({
+            Title = "Refresh",
+            Content = "อัปเดตรายชื่อผู้เล่นแล้ว",
+            Duration = 2
+        })
+
+    end
+
+})
+
+--==================================================
+-- INFO
+--==================================================
+
+Tabs.Main:AddParagraph({
+
+    Title = "ระบบ",
+
+    Content =
+        "วาร์ปรอบ Target ทุก 0.1 วิ | กด 1 2 3 4 ทุก 0.25 วิ"
+
+})
+
+--==================================================
+-- MAIN TOGGLE
+--==================================================
+
+local TeleportToggle = Tabs.Main:AddToggle("TeleportToggle", {
+
+    Title = "หมุนรอบ + ใช้สกิล",
+
+    Description = "วาร์ป 0.1 วิ / สกิล 1-2-3-4 ทุก 0.25 วิ",
+
+    Default = false
+
+})
+
+TeleportToggle:OnChanged(function(Value)
+
+    Running = Value
+
+    --==================================================
+    -- STOP
+    --==================================================
+
+    if not Running then
+
+        print("[STOP] ระบบหยุดแล้ว")
+
+        Fluent:Notify({
+            Title = "หยุดทำงาน",
+            Content = "หยุดระบบแล้ว",
+            Duration = 2
+        })
+
+        return
+    end
+
+    --==================================================
+    -- CHECK TARGET
+    --==================================================
+
+    if not SelectedPlayerName then
+
+        Running = false
+
+        pcall(function()
+            TeleportToggle:SetValue(false)
+        end)
+
+        Fluent:Notify({
+            Title = "ยังไม่ได้เลือกผู้เล่น",
+            Content = "กรุณาเลือกผู้เล่นก่อน",
+            Duration = 3
+        })
+
+        return
+    end
+
+    CircleAngle = 0
+
+    print("[START] Target:", SelectedPlayerName)
+
+    Fluent:Notify({
+        Title = "เริ่มทำงาน",
+        Content = "Target: " .. SelectedPlayerName,
+        Duration = 3
+    })
+
+    --==================================================
+    -- TELEPORT LOOP
+    -- ทุก 0.1 วิ
+    --==================================================
+
+    task.spawn(function()
+
+        while Running do
+
+            local Target = GetTarget()
+
+            if not Target then
+
+                Running = false
+
+                pcall(function()
+                    TeleportToggle:SetValue(false)
+                end)
+
+                Fluent:Notify({
+                    Title = "Target ออกแล้ว",
+                    Content = "ผู้เล่นที่เลือกออกจากเซิร์ฟเวอร์",
+                    Duration = 4
+                })
+
+                break
+            end
+
+            TeleportAroundTarget()
+
+            task.wait(0.01)
+
+        end
+
+    end)
+
+    --==================================================
+    -- SKILL LOOP
+    -- 1 → 2 → 3 → 4
+    -- ทุก 0.25 วิ
+    --==================================================
+
+    task.spawn(function()
+
+        while Running do
+
+            local Target = GetTarget()
+
+            if not Target then
+                break
+            end
+
+            -- 1
+            PressKey(Enum.KeyCode.One)
+
+            task.wait(0.25)
+
+            if not Running then
+                break
+            end
+
+            -- 2
+            PressKey(Enum.KeyCode.Two)
+
+            task.wait(0.25)
+
+            if not Running then
+                break
+            end
+
+            -- 3
+            PressKey(Enum.KeyCode.Three)
+
+            task.wait(0.25)
+
+            if not Running then
+                break
+            end
+
+            -- 4
+            PressKey(Enum.KeyCode.Four)
+
+            task.wait(0.25)
+
+        end
+
+    end)
+
+end)
+
+--==================================================
+-- PLAYER JOIN
+--==================================================
+
+Players.PlayerAdded:Connect(function()
+
+    task.wait(0.5)
+
+    pcall(function()
+        PlayerDropdown:SetValues(GetPlayerNames())
+    end)
+
+end)
+
+--==================================================
+-- PLAYER LEAVE
+--==================================================
+
+Players.PlayerRemoving:Connect(function(Player)
+
+    if SelectedPlayerName == Player.Name then
+
+        print("[TARGET LEFT]", Player.Name)
+
+        SelectedPlayerName = nil
+        Running = false
+
+        pcall(function()
+            TeleportToggle:SetValue(false)
+        end)
+
+        Fluent:Notify({
+            Title = "Target ออกแล้ว",
+            Content = Player.Name .. " ออกจากเซิร์ฟเวอร์",
+            Duration = 4
+        })
+
+    end
+
+    task.wait(0.3)
+
+    pcall(function()
+        PlayerDropdown:SetValues(GetPlayerNames())
+    end)
+
+end)
+
+--==================================================
+-- SETTINGS
+--==================================================
+
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+
+InterfaceManager:SetFolder("TargetCircle")
+SaveManager:SetFolder("TargetCircle/config")
+
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+--==================================================
+-- START
+--==================================================
+
+Window:SelectTab(1)
+
+Fluent:Notify({
+
+    Title = "Target Circle",
+
+    Content = "โหลดสคริปต์เรียบร้อย",
+
+    Duration = 5
+
+})
+
+SaveManager:LoadAutoloadConfig()
+
+print("================================")
+print(" Target Circle Loaded")
+print(" Teleport : 0.1s")
+print(" Skill    : 1 2 3 4")
+print(" Skill Delay : 0.25s")
+print(" Radius   :", CircleRadius)
+print(" Height   :", CircleHeight)
+print("================================")==================================================
+-- SERVICES
+--==================================================
+
+local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local LocalPlayer = Players.LocalPlayer
+
+--==================================================
+-- FLUENT
+--==================================================
+
+local Fluent = loadstring(game:HttpGet(
+    "https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"
+))()
+
+local SaveManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"
+))()
+
+local InterfaceManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"
+))()
+
+--==================================================
+-- WINDOW
+--==================================================
+
+local Window = Fluent:CreateWindow({
+    Title = "Target Circle",
+    SubTitle = "Teleport 0.1s + Skill 0.25s",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+--==================================================
+-- TABS
+--==================================================
+
+local Tabs = {
+    Main = Window:AddTab({
+        Title = "Main",
+        Icon = "target"
+    }),
+
+    Settings = Window:AddTab({
+        Title = "Settings",
+        Icon = "settings"
+    })
+}
+
+--==================================================
+-- VARIABLES
+--==================================================
+
+local SelectedPlayerName = nil
+local Running = false
+
+-- วงกลม
+local CircleAngle = 0
+
+-- ระยะจาก Target
+local CircleRadius = 5
+
+-- ความสูง
+local CircleHeight = 2
+
+-- องศาที่หมุนต่อการวาร์ป 1 ครั้ง
+local CircleSpeed = 15
+
+--==================================================
+-- PLAYER LIST
+--==================================================
+
+local function GetPlayerNames()
+
+    local Names = {}
+
+    for _, Player in ipairs(Players:GetPlayers()) do
+
+        if Player ~= LocalPlayer then
+            table.insert(Names, Player.Name)
+        end
+
+    end
+
+    table.sort(Names)
+
+    return Names
+end
+
+--==================================================
+-- GET TARGET
+--==================================================
+
+local function GetTarget()
+
+    if not SelectedPlayerName then
+        return nil
+    end
+
+    return Players:FindFirstChild(SelectedPlayerName)
+end
+
+--==================================================
+-- CIRCLE TELEPORT
+--==================================================
+
+local function TeleportAroundTarget()
+
+    local Target = GetTarget()
+
+    if not Target then
+        return false
+    end
+
+    local Character = LocalPlayer.Character
+    local TargetCharacter = Target.Character
+
+    if not Character or not TargetCharacter then
+        return false
+    end
+
+    local MyRoot = Character:FindFirstChild("HumanoidRootPart")
+    local TargetRoot = TargetCharacter:FindFirstChild("HumanoidRootPart")
+
+    if not MyRoot or not TargetRoot then
+        return false
+    end
+
+    -- เพิ่มมุม
+    CircleAngle = CircleAngle + math.rad(CircleSpeed)
+
+    -- ครบรอบ
+    if CircleAngle >= math.rad(360) then
+        CircleAngle = CircleAngle - math.rad(360)
+    end
+
+    -- คำนวณจุดรอบ Target
+    local OffsetX = math.cos(CircleAngle) * CircleRadius
+    local OffsetZ = math.sin(CircleAngle) * CircleRadius
+
+    local Position =
+        TargetRoot.Position
+        + Vector3.new(
+            OffsetX,
+            CircleHeight,
+            OffsetZ
+        )
+
+    -- วาร์ป + หันหน้าเข้า Target
+    MyRoot.CFrame = CFrame.lookAt(
+        Position,
+        TargetRoot.Position
+    )
+
+    return true
+end
+
+--==================================================
+-- PRESS KEY
+--==================================================
+
+local function PressKey(KeyCode)
+
+    pcall(function()
+
+        VirtualInputManager:SendKeyEvent(
+            true,
+            KeyCode,
+            false,
+            game
+        )
+
+        VirtualInputManager:SendKeyEvent(
+            false,
+            KeyCode,
+            false,
+            game
+        )
+
+    end)
+
+end
+
+--==================================================
+-- PLAYER DROPDOWN
+--==================================================
+
+local PlayerDropdown = Tabs.Main:AddDropdown("TargetPlayer", {
+
+    Title = "เลือกผู้เล่น",
+
+    Description = "เลือกผู้เล่นที่ต้องการหมุนรอบ",
+
+    Values = GetPlayerNames(),
+
+    Multi = false,
+
+    Default = nil
+
+})
+
+PlayerDropdown:OnChanged(function(Value)
+
+    if not Value then
+
+        SelectedPlayerName = nil
+
+        return
+    end
+
+    local Player = Players:FindFirstChild(Value)
+
+    if Player then
+
+        SelectedPlayerName = Player.Name
+        CircleAngle = 0
+
+        print("[TARGET]", SelectedPlayerName)
+
+        Fluent:Notify({
+            Title = "เลือก Target",
+            Content = SelectedPlayerName,
+            Duration = 2
+        })
+
+    end
+
+end)
+
+--==================================================
+-- REFRESH
+--==================================================
+
+Tabs.Main:AddButton({
+
+    Title = "รีเฟรชรายชื่อผู้เล่น",
+
+    Description = "โหลดรายชื่อผู้เล่นใหม่",
+
+    Callback = function()
+
+        pcall(function()
+            PlayerDropdown:SetValues(GetPlayerNames())
+        end)
+
+        Fluent:Notify({
+            Title = "Refresh",
+            Content = "อัปเดตรายชื่อผู้เล่นแล้ว",
+            Duration = 2
+        })
+
+    end
+
+})
+
+--==================================================
+-- INFO
+--==================================================
+
+Tabs.Main:AddParagraph({
+
+    Title = "ระบบ",
+
+    Content =
+        "วาร์ปรอบ Target ทุก 0.1 วิ | กด 1 2 3 4 ทุก 0.25 วิ"
+
+})
+
+--==================================================
+-- MAIN TOGGLE
+--==================================================
+
+local TeleportToggle = Tabs.Main:AddToggle("TeleportToggle", {
+
+    Title = "หมุนรอบ + ใช้สกิล",
+
+    Description = "วาร์ป 0.1 วิ / สกิล 1-2-3-4 ทุก 0.25 วิ",
+
+    Default = false
+
+})
+
+TeleportToggle:OnChanged(function(Value)
+
+    Running = Value
+
+    --==================================================
+    -- STOP
+    --==================================================
+
+    if not Running then
+
+        print("[STOP] ระบบหยุดแล้ว")
+
+        Fluent:Notify({
+            Title = "หยุดทำงาน",
+            Content = "หยุดระบบแล้ว",
+            Duration = 2
+        })
+
+        return
+    end
+
+    --==================================================
+    -- CHECK TARGET
+    --==================================================
+
+    if not SelectedPlayerName then
+
+        Running = false
+
+        pcall(function()
+            TeleportToggle:SetValue(false)
+        end)
+
+        Fluent:Notify({
+            Title = "ยังไม่ได้เลือกผู้เล่น",
+            Content = "กรุณาเลือกผู้เล่นก่อน",
+            Duration = 3
+        })
+
+        return
+    end
+
+    CircleAngle = 0
+
+    print("[START] Target:", SelectedPlayerName)
+
+    Fluent:Notify({
+        Title = "เริ่มทำงาน",
+        Content = "Target: " .. SelectedPlayerName,
+        Duration = 3
+    })
+
+    --==================================================
+    -- TELEPORT LOOP
+    -- ทุก 0.1 วิ
+    --==================================================
+
+    task.spawn(function()
+
+        while Running do
+
+            local Target = GetTarget()
+
+            if not Target then
+
+                Running = false
+
+                pcall(function()
+                    TeleportToggle:SetValue(false)
+                end)
+
+                Fluent:Notify({
+                    Title = "Target ออกแล้ว",
+                    Content = "ผู้เล่นที่เลือกออกจากเซิร์ฟเวอร์",
+                    Duration = 4
+                })
+
+                break
+            end
+
+            TeleportAroundTarget()
+
+            task.wait(0.01)
+
+        end
+
+    end)
+
+    --==================================================
+    -- SKILL LOOP
+    -- 1 → 2 → 3 → 4
+    -- ทุก 0.25 วิ
+    --==================================================
+
+    task.spawn(function()
+
+        while Running do
+
+            local Target = GetTarget()
+
+            if not Target then
+                break
+            end
+
+            -- 1
+            PressKey(Enum.KeyCode.One)
+
+            task.wait(0.25)
+
+            if not Running then
+                break
+            end
+
+            -- 2
+            PressKey(Enum.KeyCode.Two)
+
+            task.wait(0.25)
+
+            if not Running then
+                break
+            end
+
+            -- 3
+            PressKey(Enum.KeyCode.Three)
+
+            task.wait(0.25)
+
+            if not Running then
+                break
+            end
+
+            -- 4
+            PressKey(Enum.KeyCode.Four)
+
+            task.wait(0.25)
+
+        end
+
+    end)
+
+end)
+
+--==================================================
+-- PLAYER JOIN
+--==================================================
+
+Players.PlayerAdded:Connect(function()
+
+    task.wait(0.5)
+
+    pcall(function()
+        PlayerDropdown:SetValues(GetPlayerNames())
+    end)
+
+end)
+
+--==================================================
+-- PLAYER LEAVE
+--==================================================
+
+Players.PlayerRemoving:Connect(function(Player)
+
+    if SelectedPlayerName == Player.Name then
+
+        print("[TARGET LEFT]", Player.Name)
+
+        SelectedPlayerName = nil
+        Running = false
+
+        pcall(function()
+            TeleportToggle:SetValue(false)
+        end)
+
+        Fluent:Notify({
+            Title = "Target ออกแล้ว",
+            Content = Player.Name .. " ออกจากเซิร์ฟเวอร์",
+            Duration = 4
+        })
+
+    end
+
+    task.wait(0.3)
+
+    pcall(function()
+        PlayerDropdown:SetValues(GetPlayerNames())
+    end)
+
+end)
+
+--==================================================
+-- SETTINGS
+--==================================================
+
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+
+InterfaceManager:SetFolder("TargetCircle")
+SaveManager:SetFolder("TargetCircle/config")
+
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+--==================================================
+-- START
+--==================================================
+
+Window:SelectTab(1)
+
+Fluent:Notify({
+
+    Title = "Target Circle",
+
+    Content = "โหลดสคริปต์เรียบร้อย",
+
+    Duration = 5
+
+})
+
+SaveManager:LoadAutoloadConfig()
+
+print("================================")
+print(" Target Circle Loaded")
+print(" Teleport : 0.1s")
+print(" Skill    : 1 2 3 4")
+print(" Skill Delay : 0.25s")
+print(" Radius   :", CircleRadius)
+print(" Height   :", CircleHeight)
+print("================================")
